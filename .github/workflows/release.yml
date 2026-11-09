@@ -86,6 +86,7 @@ jobs:
           cp "$FF" "$APP/Contents/MacOS/ffmpeg"
           chmod +x "$APP/Contents/MacOS/"*
           sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          iconutil -c icns packaging/macos/Sincra.iconset -o "$APP/Contents/Resources/Sincra.icns"
           codesign --force --deep --sign - "$APP"
           tar -C dist -czf "dist/${{ matrix.asset }}" "Sincra.app"
 

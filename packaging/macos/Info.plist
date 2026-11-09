@@ -10,6 +10,8 @@
 	<string>io.github.sincra</string>
 	<key>CFBundleExecutable</key>
 	<string>sincra-gui</string>
+	<key>CFBundleIconFile</key>
+	<string>Sincra</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

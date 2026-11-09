@@ -34,6 +34,9 @@ sys-locale = "0.3"
 eframe = "0.29"
 rfd = "0.15"
 
+[build-dependencies]
+winresource = "0.1"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
 

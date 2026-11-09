@@ -205,25 +205,8 @@ fn theme_pref(code: &str) -> egui::ThemePreference {
 }
 
 fn app_icon() -> egui::IconData {
-    let n = 64usize;
-    let mut rgba = vec![0u8; n * n * 4];
-    for y in 0..n {
-        for x in 0..n {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            let r = 12.0;
-            let (cx, cy) = (fx.clamp(r, n as f32 - r), fy.clamp(r, n as f32 - r));
-            if (fx - cx).powi(2) + (fy - cy).powi(2) > r * r {
-                continue;
-            }
-            // two offset bars: tracks brought into sync
-            let bar1 = (20..28).contains(&y) && (12..42).contains(&x);
-            let bar2 = (36..44).contains(&y) && (22..52).contains(&x);
-            let c = if bar1 || bar2 { [0xe8, 0x93, 0x2a] } else { [0x17, 0x1a, 0x1e] };
-            let i = (y * n + x) * 4;
-            rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
-        }
-    }
-    egui::IconData { rgba, width: n as u32, height: n as u32 }
+    // same artwork as the executables (packaging/icon/make_icon.py)
+    eframe::icon_data::from_png_bytes(include_bytes!("../../packaging/icon/sincra-256.png")).unwrap_or_default()
 }
 
 // ------------------------------------------------------------------ helpers
