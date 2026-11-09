@@ -32,7 +32,7 @@ irm https://raw.githubusercontent.com/alexclaz/sincra/main/install.ps1 | iex
 Instala em `%LOCALAPPDATA%\Programs\Sincra`, cria o atalho no menu Iniciar e coloca o
 `sincra` no PATH. Não pede administrador e o SmartScreen não bloqueia (mesmo motivo do macOS).
 
-Para instalar uma versão específica, defina `SINCRA_VERSION=v0.2.1`. Para desinstalar:
+Para instalar uma versão específica, defina `SINCRA_VERSION=v0.2.2`. Para desinstalar:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | SINCRA_UNINSTALL=1 sh
@@ -144,11 +144,11 @@ macOS arm64 e macOS x64, junta o ffmpeg (dos wheels do `imageio-ffmpeg` no PyPI)
 monta o `.app` com assinatura ad-hoc e publica a Release. Basta subir uma tag:
 
 ```bash
-git tag v0.2.1
+git tag v0.2.2
 ```
 
 ```bash
-git push origin v0.2.1
+git push origin v0.2.2
 ```
 
 O repositório precisa ser **público** para o `curl`/`irm` baixarem sem autenticação.

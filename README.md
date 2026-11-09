@@ -39,7 +39,7 @@ irm https://raw.githubusercontent.com/alexclaz/sincra/main/install.ps1 | iex
 Installs to `%LOCALAPPDATA%\Programs\Sincra`, adds a Start menu shortcut and puts `sincra` on the PATH.
 No administrator rights needed, and SmartScreen does not block it (same reason as on macOS).
 
-To install a specific version, set `SINCRA_VERSION=v0.2.1`. To uninstall:
+To install a specific version, set `SINCRA_VERSION=v0.2.2`. To uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | SINCRA_UNINSTALL=1 sh
@@ -155,11 +155,11 @@ arm64 and macOS x64, adds ffmpeg (from the `imageio-ffmpeg` wheels on PyPI), ass
 ad-hoc signature and publishes the Release. Push a tag:
 
 ```bash
-git tag v0.2.1
+git tag v0.2.2
 ```
 
 ```bash
-git push origin v0.2.1
+git push origin v0.2.2
 ```
 
 The repository must be **public** for `curl`/`irm` to download without authentication.
