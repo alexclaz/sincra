@@ -58,8 +58,8 @@ struct Args {
     list: bool,
     #[arg(short, long, help = tr!("sem mensagens", "no messages"))]
     quiet: bool,
-    #[arg(long, default_value = "auto", value_parser = ["auto", "pt", "en"],
-          help = tr!("idioma das mensagens (auto = do sistema)", "message language (auto = system)"))]
+    #[arg(long, default_value = "en", value_parser = ["en", "pt", "auto"],
+          help = tr!("idioma das mensagens (auto = do sistema)", "message language (auto = system language)"))]
     lang: String,
 }
 
@@ -83,7 +83,8 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     let lang = argv.iter().position(|a| a == "--lang").and_then(|i| argv.get(i + 1).cloned())
         .or_else(|| argv.iter().find_map(|a| a.strip_prefix("--lang=").map(str::to_string)))
-        .unwrap_or_else(|| "auto".into());
+        .or_else(|| std::env::var("SINCRA_LANG").ok())
+        .unwrap_or_else(|| "en".into());
     sincra::i18n::set_lang(&lang);
 
     let args = Args::parse();

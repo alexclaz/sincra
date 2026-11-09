@@ -1,13 +1,24 @@
 # Sincra
 
-Sincronização automática de multicâmera por áudio. Você importa a timeline "crua"
-(XML Final Cut Pro 7, exportado do DaVinci Resolve ou do Premiere) e ele devolve a timeline com cada
-câmera alinhada ao gravador de áudio, em `<nome> - synced.xml`.
+**English** · [Português](README.pt-BR.md)
 
-Binário nativo em Rust para **Windows e macOS** (Intel e Apple Silicon), com interface gráfica e linha
-de comando. O ffmpeg vem junto no pacote.
+Automatic multicam sync by audio. Import the "raw" timeline (Final Cut Pro 7 XML exported from
+DaVinci Resolve or Premiere) and Sincra gives it back with every camera lined up with the audio
+recorder, as `<name> - synced.xml`.
 
-## Instalação
+A native Rust binary for **Windows and macOS** (Intel and Apple Silicon), with a graphical interface and
+a command line. ffmpeg ships with it.
+
+![Sincra: cameras synced by audio against the recorder](docs/screenshot-dark.png)
+
+<details>
+<summary>Light theme</summary>
+
+![Sincra in the light theme](docs/screenshot-light.png)
+
+</details>
+
+## Install
 
 **macOS** (Terminal):
 
@@ -15,9 +26,9 @@ de comando. O ffmpeg vem junto no pacote.
 curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | sh
 ```
 
-Instala `Sincra.app` em `~/Applications` e o comando `sincra` em `~/.local/bin`.
-O app não é assinado nem notarizado pela Apple. Como ele é baixado pelo `curl`, e não pelo navegador,
-o macOS não marca o arquivo como "baixado da internet" e o Gatekeeper não bloqueia.
+Installs `Sincra.app` in `~/Applications` and the `sincra` command in `~/.local/bin`. The app is not
+signed or notarized by Apple. Because it is downloaded with `curl` and not a browser, macOS does not flag
+it as "downloaded from the internet" and Gatekeeper does not block it.
 
 **Windows** (PowerShell):
 
@@ -25,10 +36,10 @@ o macOS não marca o arquivo como "baixado da internet" e o Gatekeeper não bloq
 irm https://raw.githubusercontent.com/alexclaz/sincra/main/install.ps1 | iex
 ```
 
-Instala em `%LOCALAPPDATA%\Programs\Sincra`, cria o atalho no menu Iniciar e coloca o
-`sincra` no PATH. Não pede administrador e o SmartScreen não bloqueia (mesmo motivo do macOS).
+Installs to `%LOCALAPPDATA%\Programs\Sincra`, adds a Start menu shortcut and puts `sincra` on the PATH.
+No administrator rights needed, and SmartScreen does not block it (same reason as on macOS).
 
-Para instalar uma versão específica, defina `SINCRA_VERSION=v0.2.0`. Para desinstalar:
+To install a specific version, set `SINCRA_VERSION=v0.2.1`. To uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | SINCRA_UNINSTALL=1 sh
@@ -38,132 +49,137 @@ curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | S
 $env:SINCRA_UNINSTALL=1; irm https://raw.githubusercontent.com/alexclaz/sincra/main/install.ps1 | iex
 ```
 
-## Uso
+## Usage
 
 ### Interface
 
-1. **Importar XML**, arrastar o arquivo para a janela ou escolher um dos recentes. Se o XML tiver mais de
-   uma sequência, escolha ao lado do nome.
-2. Escolha a **Precisão** na barra de cima (veja os modos abaixo). O padrão é *Ótimo*.
-3. **Sincronizar**.
-4. **Exportar XML** e importe o arquivo no Resolve ou no Premiere.
+1. **Import XML**, drop the file on the window, or pick a recent one. If the XML has more than one
+   sequence, choose it next to the name.
+2. Pick the **Precision** in the toolbar (see the modes below). The default is *Optimal*.
+3. **Sync**.
+4. **Export XML** and import the file in Resolve or Premiere.
 
-A tela principal é a timeline, com uma faixa por dispositivo. O cabeçalho da faixa mostra quantos clipes
-casaram pelo áudio, e o anel à direita fixa aquele dispositivo como referência. O jeito do clipe indica
-o resultado:
+The main view is the timeline, one track per device. The track header shows how many clips matched by
+audio, and the ring on the right pins that device as the reference. The clip itself shows the result:
 
-- **preenchido**: casou pelo áudio (quanto mais opaco, maior a confiança);
-- **hachurado**: o áudio não casou e ele foi posicionado pelo horário de criação;
-- **só contorno tracejado**: não sincronizado (ficou onde estava no XML) ou arquivo não encontrado.
+- **solid**: matched by audio (the more opaque, the higher the confidence);
+- **hatched**: the audio did not match and the clip was placed by its creation time;
+- **dashed outline only**: not synced (left where it was in the XML) or file not found.
 
-Cada clipe mostra o deslocamento aplicado (por exemplo `+3,2 s`), e *Posição original* desenha onde ele
-estava no XML importado. Clique num clipe para ver os detalhes no painel da direita. Ctrl + rolar dá
-zoom, arrastar move, *Ajustar* mostra tudo. A barra de baixo mostra a última mensagem; *Log* abre o histórico.
+Each clip shows the offset that was applied (e.g. `+3.2 s`), and *Original position* draws where it was in
+the imported XML. Click a clip to see its details in the right-hand panel. Ctrl + scroll zooms, dragging
+pans, *Fit* shows everything. The bottom bar shows the last message; *Log* opens the full history.
 
-Na engrenagem ficam o idioma (português ou inglês), o tema (claro ou escuro; os dois seguem o sistema por
-padrão, e o botão de meio círculo na barra de cima alterna o tema), a ordem dos clipes, a cronologia, as cores de label, o sufixo do arquivo, o cache, o
-redirecionamento de caminhos e as pastas onde procurar mídias que mudaram de lugar.
+The gear holds the language (English by default, Portuguese, or the system language), the theme (light or
+dark; follows the system by default, and the half-circle button in the toolbar toggles it), the clip
+order, chronology, label colors, file suffix, audio cache, path redirection and the folders to search
+for media that moved.
 
-### Linha de comando
+### Command line
 
 ```bash
 sincra "Timeline 1.xml"
 ```
 
 ```bash
-sincra "Timeline 1.xml" -m thorough -o saida.xml
+sincra "Timeline 1.xml" -m thorough -o output.xml
 ```
 
 ```bash
-sincra "Timeline 1.xml" --remap "E:/Trabalhos=/Volumes/HD/Trabalhos"
+sincra "Timeline 1.xml" --remap "E:/Projects=/Volumes/HD/Projects"
 ```
 
 ```bash
 sincra "Timeline 1.xml" --list
 ```
 
-`--list` mostra as sequências e os dispositivos detectados. As mensagens saem no idioma do sistema; use
-`--lang en` ou `--lang pt` para escolher. `sincra --help` lista todas as opções.
-Sem argumentos, `sincra` abre a interface.
+`--list` shows the sequences and the detected devices. Messages are in English; use `--lang pt` (or the
+`SINCRA_LANG=pt` variable) for Portuguese and `--lang auto` to follow the system. `sincra --help` lists
+every option. Without arguments, `sincra` opens the interface.
 
-## Modos
+## Modes
 
-| Precisão (`-m` na linha de comando) | O que faz |
+| Precision (`-m` on the command line) | What it does |
 |---|---|
-| Aproximado (`approximate`) | Só pelo horário de criação dos arquivos, sem áudio (erro de ~1 s e depende dos relógios estarem certos). |
-| Muito rápido (`very_fast`) | Uma passada grossa (1 kHz), sem refinamento fino. |
-| Rápido (`fast`) | Passada grossa a 1 kHz + refinamento fino a 8 kHz. |
-| Avançado (`advanced`) | Multi-passadas a 2 kHz, sem usar o relógio para restringir a busca. |
-| **Ótimo** (`optimal`) | Multi-passadas usando o horário de criação para prever onde procurar. Indicado para mídia original. |
-| Minucioso (`thorough`) | Como o Ótimo, mas não confia no relógio (proxies e arquivos baixados). |
-| Máximo (`utmost`) | Minucioso + tentativas em várias resoluções (1/2/4 kHz). É o mais lento. |
+| Approximate (`approximate`) | Creation times only, no audio (about 1 s of error, and the clocks must be right). |
+| Very fast (`very_fast`) | One coarse pass (1 kHz), no fine refinement. |
+| Fast (`fast`) | Coarse pass at 1 kHz + fine refinement at 8 kHz. |
+| Advanced (`advanced`) | Multiple passes at 2 kHz, without using the clocks to narrow the search. |
+| **Optimal** (`optimal`) | Multiple passes, using creation times to predict where to search. Best for original media. |
+| Thorough (`thorough`) | Like Optimal, but does not trust the clocks (proxies, downloaded files). |
+| Utmost (`utmost`) | Thorough + attempts at several resolutions (1/2/4 kHz). The slowest. |
 
-## Como funciona
+## How it works
 
-1. **Leitura do XML:** cada colocação de mídia (vídeo + canais de áudio linkados) vira um "clipe".
-   Os clipes são agrupados em **dispositivos** pela trilha e pela assinatura do arquivo: resolução,
-   extensão, fabricante e padrão do nome. Dispositivo com vídeo é câmera; só áudio é gravador.
-2. **Horário de criação:** vem do XML lateral da Sony (`C0001M01.XML`), do BWF `bext` dos WAVs
-   (data + `time_reference`, com precisão de amostra), do `creation_time` do container ou, em último
-   caso, do mtime do arquivo.
-3. **Áudio:** é decodificado uma vez via ffmpeg para mono a 8 kHz e guardado em cache (arquivos `.npy`
-   na pasta de cache do sistema, em `sincra`).
-4. **Referência:** o gravador mais longo. Os clipes dele são dispostos pelo horário de criação.
-5. **Busca por áudio (GCC-PHAT):**
-   - Passada global em todo o gravador. Os matches fortes e inequívocos viram *âncoras*.
-   - Com as âncoras, o motor decide sozinho se o relógio da câmera é confiável e qual é a ordem
-     cronológica certa (horário, nome ou XML). Âncoras que contradizem o relógio ou a ordem são descartadas.
-   - Os clipes restantes são buscados em janelas restritas: a previsão do relógio e o intervalo entre os
-     vizinhos já sincronizados.
-   - Por fim, um refinamento a 8 kHz com interpolação sub-amostra.
-6. **Sem match:** o clipe vai pelo horário de criação, usando o offset de relógio do vizinho
-   sincronizado, ou logo após o clipe anterior se o relógio não for confiável.
-   Esses clipes recebem o label **Rose** (configurável).
-7. **Exportação:** a posição em frames é calculada em relação ao frame *arredondado* do clipe do
-   gravador ao qual a câmera casou. Cada dispositivo ganha suas próprias trilhas, e clipes que se
-   sobrepõem vão para trilhas extras. Efeitos, filtros e links do XML original são preservados.
+1. **Reading the XML:** each placement of a media file (video + linked audio channels) becomes a "clip".
+   Clips are grouped into **devices** by track and file signature: resolution, extension, maker and name
+   pattern. A device with video is a camera; audio only is a recorder.
+2. **Creation time:** from the Sony sidecar XML (`C0001M01.XML`), the BWF `bext` chunk of WAV files (date +
+   `time_reference`, sample accurate), the container's `creation_time`, or, as a last resort, the file's
+   modification time.
+3. **Audio:** decoded once with ffmpeg to 8 kHz mono and cached (`.npy` files in the system cache folder,
+   under `sincra`).
+4. **Reference:** the longest recorder. Its clips are laid out by creation time.
+5. **Audio search (GCC-PHAT):**
+   - A global pass over the whole recorder. Strong, unambiguous matches become *anchors*.
+   - From the anchors, the engine decides whether the camera clock can be trusted and which chronological
+     order is right (time, name or XML). Anchors that contradict the clock or the order are dropped.
+   - The remaining clips are searched in narrow windows: the clock prediction and the gap between the
+     neighbours already synced.
+   - Finally, a refinement at 8 kHz with sub-sample interpolation.
+6. **No match:** the clip is placed by its creation time, using the clock offset of the synced neighbour,
+   or right after the previous clip when the clock is not reliable. These clips get the **Rose** label
+   (configurable).
+7. **Export:** the frame position is computed relative to the *rounded* frame of the recorder clip the
+   camera matched. Each device gets its own tracks, and overlapping clips go to extra tracks. Effects,
+   filters and links from the original XML are kept.
 
-## Desenvolvimento
+## Development
 
 ```bash
 cargo build --release
 ```
 
-Gera `target/release/sincra` (CLI) e `sincra-gui` (interface; no Windows sem janela de
-console). Em desenvolvimento, aponte o ffmpeg com a variável `SINCRA_FFMPEG` se ele não estiver no PATH.
-O ffmpeg é procurado nesta ordem: `SINCRA_FFMPEG`, ao lado do executável, PATH, Homebrew.
+Builds `target/release/sincra` (command line) and `sincra-gui` (interface; no console window on Windows).
+During development, point to ffmpeg with `SINCRA_FFMPEG` if it is not on the PATH. ffmpeg is looked up in
+this order: `SINCRA_FFMPEG`, next to the executable, PATH, Homebrew.
 
-### Publicar uma versão
+The interface uses the bundled [Inter](https://github.com/rsms/inter) and
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) fonts (SIL Open Font License, see
+`assets/fonts`).
 
-O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) compila Windows x64,
-macOS arm64 e macOS x64, junta o ffmpeg (dos wheels do `imageio-ffmpeg` no PyPI),
-monta o `.app` com assinatura ad-hoc e publica a Release. Basta subir uma tag:
+### Publishing a release
+
+The workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) builds Windows x64, macOS
+arm64 and macOS x64, adds ffmpeg (from the `imageio-ffmpeg` wheels on PyPI), assembles the `.app` with an
+ad-hoc signature and publishes the Release. Push a tag:
 
 ```bash
-git tag v0.2.0
+git tag v0.2.1
 ```
 
 ```bash
-git push origin v0.2.0
+git push origin v0.2.1
 ```
 
-O repositório precisa ser **público** para o `curl`/`irm` baixarem sem autenticação.
+The repository must be **public** for `curl`/`irm` to download without authentication.
 
-### Validação
+### Validation
 
-O Sincra é uma reescrita em Rust de uma versão anterior em Python. Rodando as duas no mesmo XML, as saídas
-são idênticas byte a byte:
+Sincra is a Rust rewrite of an earlier Python version. Running both on the same XML gives byte-identical
+output:
 
-- `Timeline 1.xml` (11-08 HIGOR NHOT, 3 câmeras + Zoom): 15/15 clipes no mesmo frame.
-- 10-10 OLI (33 clipes Sony + 3 DJI + Zoom): 39/39 clipes no mesmo frame.
+- a real project exported from Resolve (3 cameras + Zoom recorder): 15/15 clips on the same frame;
+- an event with 33 Sony clips + 3 DJI + Zoom: 39/39 clips on the same frame.
 
-Tempo no `Timeline 1.xml`: 65 s nas duas versões com o cache vazio (o gargalo é o ffmpeg lendo os WAVs
-do disco) e, com o cache pronto, 23 s na Rust contra 37 s na Python.
+Time on the first one: 65 s for both versions with an empty cache (the bottleneck is ffmpeg reading the
+WAVs from disk) and, with the cache ready, 23 s in Rust against 37 s in Python.
 
-## Limitações
+## Limitations
 
-- Só lê e escreve **FCP7 XML (xmeml)**. Ainda não suporta FCPXML (Final Cut Pro X).
-- Clipes com velocidade alterada ou mídia com drift grande (horas sem timecode) não recebem correção de drift.
-- O áudio é mixado em mono. Gravadores com canal mudo funcionam, mas canais em fase invertida podem
-  se cancelar.
-- No macOS, "Abrir com" pelo Finder não passa o arquivo para o app; use IMPORTAR XML ou arraste para a janela.
+- Reads and writes **FCP7 XML (xmeml)** only. FCPXML (Final Cut Pro X) is not supported yet.
+- Clips with speed changes or media with large drift (hours without timecode) get no drift correction.
+- Audio is mixed to mono. Recorders with a silent channel work, but channels with inverted phase can
+  cancel out.
+- On macOS, "Open With" from the Finder does not pass the file to the app; use Import XML or drop the
+  file on the window.

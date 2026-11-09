@@ -1,4 +1,4 @@
-//! Interface language (Portuguese / English). Chosen from the system locale, or explicitly.
+//! Interface language (English by default, or Portuguese). "auto" follows the system locale.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -52,8 +52,8 @@ pub fn set_lang(code: &str) {
 pub fn is_en() -> bool {
     match LANG.load(Ordering::Relaxed) {
         UNSET => {
-            set_lang("auto");
-            is_en()
+            set_lang("en");
+            true
         }
         v => v == EN,
     }

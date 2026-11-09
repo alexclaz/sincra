@@ -32,7 +32,7 @@ pub struct Settings {
     pub last_dir: String,
     /// recently opened XML files, newest first
     pub recent: Vec<String>,
-    /// "auto" (system), "pt" or "en"
+    /// "en" (default), "pt" or "auto" (system language)
     pub language: String,
     /// "system", "dark" or "light"
     pub theme: String,
@@ -53,7 +53,7 @@ impl Default for Settings {
             search_dirs: Vec::new(),
             last_dir: String::new(),
             recent: Vec::new(),
-            language: "auto".into(),
+            language: "en".into(),
             theme: "system".into(),
         }
     }

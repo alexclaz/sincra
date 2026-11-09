@@ -132,43 +132,18 @@ fn ui_font(size: f32) -> FontId {
     FontId::proportional(size)
 }
 
-fn load_font(cands: &[(String, u32)]) -> Option<egui::FontData> {
-    for (path, i) in cands {
-        if let Ok(b) = std::fs::read(path) {
-            let mut d = egui::FontData::from_owned(b);
-            d.index = *i;
-            return Some(d);
-        }
-    }
-    None
-}
-
+/// Fonts are bundled (Inter + JetBrains Mono, SIL OFL) so the interface looks the same on every system:
+/// system UI fonts rendered without hinting look uneven at small sizes.
 fn setup_fonts(ctx: &egui::Context) {
-    let win = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into()) + "\\Fonts\\";
-    type Cands = Vec<(String, u32)>;
-    let (regular, semi, mono): (Cands, Cands, Cands) = if cfg!(windows) {
-        (vec![(win.clone() + "segoeui.ttf", 0)], vec![(win.clone() + "seguisb.ttf", 0), (win.clone() + "segoeuib.ttf", 0)],
-         vec![(win.clone() + "CascadiaMono.ttf", 0), (win.clone() + "consola.ttf", 0)])
-    } else if cfg!(target_os = "macos") {
-        (vec![("/System/Library/Fonts/Helvetica.ttc".into(), 0)], vec![("/System/Library/Fonts/Helvetica.ttc".into(), 1)],
-         vec![("/System/Library/Fonts/Menlo.ttc".into(), 0)])
-    } else {
-        (vec![], vec![], vec![])
-    };
     let mut f = egui::FontDefinitions::default();
-    if let Some(d) = load_font(&regular) {
-        f.font_data.insert("ui".into(), d);
-        f.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "ui".into());
-    }
-    if let Some(d) = load_font(&mono) {
-        f.font_data.insert("ui-mono".into(), d);
-        f.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "ui-mono".into());
-    }
+    f.font_data.insert("inter".into(), egui::FontData::from_static(include_bytes!("../../assets/fonts/Inter-Regular.ttf")));
+    f.font_data.insert("inter-semibold".into(), egui::FontData::from_static(include_bytes!("../../assets/fonts/Inter-SemiBold.ttf")));
+    f.font_data.insert("jetbrains-mono".into(), egui::FontData::from_static(include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf")));
+    // egui's own fonts stay as fallbacks (symbols such as the gear)
+    f.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "inter".into());
+    f.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "jetbrains-mono".into());
     let mut list = f.families[&FontFamily::Proportional].clone();
-    if let Some(d) = load_font(&semi) {
-        f.font_data.insert("ui-semibold".into(), d);
-        list.insert(0, "ui-semibold".into());
-    }
+    list.insert(0, "inter-semibold".into());
     f.families.insert(semibold(), list);
     ctx.set_fonts(f);
 }
@@ -458,6 +433,18 @@ struct App {
     offset: f64,
     log_open: bool,
     show_original: bool,
+    /// For documentation screenshots: SINCRA_VIEW="start,end" (seconds) and SINCRA_SELECT=<track> are
+    /// applied once, right after the first synchronisation.
+    demo: Option<(Option<(f64, f64)>, Option<usize>)>,
+}
+
+fn demo_from_env() -> Option<(Option<(f64, f64)>, Option<usize>)> {
+    let view = std::env::var("SINCRA_VIEW").ok().and_then(|v| {
+        let (a, b) = v.split_once(',')?;
+        Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+    });
+    let sel = std::env::var("SINCRA_SELECT").ok().and_then(|v| v.trim().parse().ok());
+    (view.is_some() || sel.is_some()).then_some((view, sel))
 }
 
 impl App {
@@ -472,7 +459,7 @@ impl App {
             store, project: None, view: None, xml_path: None, seq_names: vec![], seq_idx: 0,
             tx, rx, busy: false, cancel: Arc::new(AtomicBool::new(false)), log: vec![], stage: String::new(),
             progress: 0.0, settings: None, pending_open: open, sel: Selection::None, px_per_sec: None, offset: 0.0,
-            log_open: false, show_original: false,
+            log_open: false, show_original: false, demo: demo_from_env(),
         }
     }
 
@@ -1031,10 +1018,21 @@ impl App {
         let resp = ui.interact(rect, ui.id().with("timeline"), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let n = v.devices.len();
-        let row_h = ((rect.height() - RULER_H) / n as f32).clamp(30.0, 92.0);
+        let row_h = ((rect.height() - RULER_H) / n as f32).clamp(30.0, 120.0);
         let track = Rect::from_min_max(Pos2::new(rect.left() + HEAD_W, rect.top() + RULER_H), Pos2::new(rect.right() - 10.0, rect.bottom()));
         let total = (v.span * 1.02).max(1.0);
         let fit = track.width() as f64 / total;
+        if v.synced {
+            if let Some((view, sel)) = self.demo.take() {
+                if let Some((a, b)) = view.filter(|(a, b)| b > a) {
+                    self.px_per_sec = Some(track.width() as f64 / (b - a));
+                    self.offset = a;
+                }
+                if let Some(d) = sel.filter(|&d| d < n) {
+                    self.sel = Selection::Device(d);
+                }
+            }
+        }
         let mut pps = self.px_per_sec.unwrap_or(fit).clamp(fit, 400.0);
 
         // ---- input: ctrl+wheel zooms around the pointer, wheel / drag pans
@@ -1334,7 +1332,7 @@ impl App {
                         _ => tr!("Automático (sistema)", "Automatic (system)"),
                     };
                     egui::ComboBox::from_id_salt("lang").selected_text(lang_label(&draft.s.language)).width(200.0).show_ui(ui, |ui| {
-                        for c in ["auto", "pt", "en"] {
+                        for c in ["en", "pt", "auto"] {
                             ui.selectable_value(&mut draft.s.language, c.to_string(), lang_label(c));
                         }
                     });
