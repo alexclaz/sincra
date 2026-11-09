@@ -1,0 +1,109 @@
+name: release
+
+# Push a tag like v0.2.0 to build Windows + macOS packages and publish a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # ffmpeg comes from the imageio-ffmpeg wheels (same static build the Python version used)
+  IMAGEIO_FFMPEG_VERSION: "0.8.1"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: sincra-windows-x64.zip
+            wheel: win_amd64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: sincra-macos-arm64.tar.gz
+            wheel: macosx_12_0_arm64
+          - os: macos-14
+            target: x86_64-apple-darwin
+            asset: sincra-macos-x64.tar.gz
+            wheel: macosx_10_13_x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Test
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --release --locked --target ${{ matrix.target }} --lib
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch ffmpeg
+        shell: bash
+        run: |
+          pip download "imageio-ffmpeg==${IMAGEIO_FFMPEG_VERSION}" --no-deps --only-binary=:all: \
+            --platform "${{ matrix.wheel }}" -d wheel
+          python -c "import zipfile,glob; zipfile.ZipFile(glob.glob('wheel/*.whl')[0]).extractall('wheel/x')"
+          ls wheel/x/imageio_ffmpeg/binaries/
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist/pkg
+          cp target/${{ matrix.target }}/release/sincra.exe dist/pkg/
+          cp target/${{ matrix.target }}/release/sincra-gui.exe dist/pkg/
+          cp wheel/x/imageio_ffmpeg/binaries/ffmpeg-*.exe dist/pkg/ffmpeg.exe
+          cd dist/pkg && 7z a ../${{ matrix.asset }} .
+
+      - name: Package (macOS .app)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          APP="dist/Sincra.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/${{ matrix.target }}/release/sincra "$APP/Contents/MacOS/"
+          cp target/${{ matrix.target }}/release/sincra-gui "$APP/Contents/MacOS/"
+          FF=$(ls wheel/x/imageio_ffmpeg/binaries/ffmpeg-* | head -1)
+          cp "$FF" "$APP/Contents/MacOS/ffmpeg"
+          chmod +x "$APP/Contents/MacOS/"*
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"
+          tar -C dist -czf "dist/${{ matrix.asset }}" "Sincra.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

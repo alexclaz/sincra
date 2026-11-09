@@ -1,0 +1,43 @@
+[package]
+name = "sincra"
+version = "0.2.0"
+edition = "2021"
+description = "Sincronizacao automatica multicam (cameras + gravadores) por audio para timelines FCP7 XML"
+license = "MIT"
+default-run = "sincra"
+
+[lib]
+name = "sincra"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sincra"
+path = "src/bin/cli.rs"
+
+[[bin]]
+name = "sincra-gui"
+path = "src/bin/gui.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+clap = { version = "4", features = ["derive"] }
+quick-xml = "0.37"
+rayon = "1"
+realfft = "3"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+walkdir = "2"
+eframe = "0.29"
+rfd = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 2
