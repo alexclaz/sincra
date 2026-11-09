@@ -1,7 +1,7 @@
 #!/bin/sh
 # Sincra installer for macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/__REPO__/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/alexclaz/sincra/main/install.sh | sh
 #
 # Installs "Sincra.app" in ~/Applications (GUI, CLI and ffmpeg inside) and links the
 # `sincra` command into ~/.local/bin. Files fetched with curl carry no quarantine flag, so
@@ -12,7 +12,7 @@
 #   SINCRA_UNINSTALL=1      remove the app and the command
 set -eu
 
-REPO="${SINCRA_REPO:-__REPO__}"
+REPO="${SINCRA_REPO:-alexclaz/sincra}"
 APP_NAME="Sincra.app"
 APP_DIR="$HOME/Applications"
 BIN_DIR="$HOME/.local/bin"

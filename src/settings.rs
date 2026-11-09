@@ -30,6 +30,12 @@ pub struct Settings {
     pub path_map: Vec<(String, String)>,
     pub search_dirs: Vec<String>,
     pub last_dir: String,
+    /// recently opened XML files, newest first
+    pub recent: Vec<String>,
+    /// "auto" (system), "pt" or "en"
+    pub language: String,
+    /// "system", "dark" or "light"
+    pub theme: String,
 }
 
 impl Default for Settings {
@@ -46,6 +52,9 @@ impl Default for Settings {
             path_map: Vec::new(),
             search_dirs: Vec::new(),
             last_dir: String::new(),
+            recent: Vec::new(),
+            language: "auto".into(),
+            theme: "system".into(),
         }
     }
 }
@@ -65,6 +74,12 @@ impl Settings {
         }
     }
 
+    pub fn add_recent(&mut self, path: &str) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_string());
+        self.recent.truncate(6);
+    }
+
     pub fn options(&self) -> Options {
         let opt = |s: &str| if s.is_empty() { None } else { Some(s.to_string()) };
         Options {
@@ -80,5 +95,19 @@ impl Settings {
             path_map: self.path_map.clone(),
             search_dirs: self.search_dirs.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_json_keeps_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"theme":"light","language":"en","cache_dir":"C:\\x"}"#).unwrap();
+        assert_eq!(s.theme, "light");
+        assert_eq!(s.language, "en");
+        assert_eq!(s.mode, "optimal");
+        assert!(s.use_cache);
     }
 }

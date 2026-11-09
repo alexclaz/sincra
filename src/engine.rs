@@ -19,6 +19,7 @@ use realfft::num_complex::Complex32;
 
 use crate::dsp::{decimate, irfft, next_fast_len, rfft};
 use crate::media::{Audio, MediaInfo, AUDIO_SR};
+use crate::tr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Status {
@@ -41,13 +42,14 @@ impl Status {
             Status::Offline => "offline",
         }
     }
-    pub fn pt(self) -> &'static str {
+    /// Name in the interface language.
+    pub fn label(self) -> &'static str {
         match self {
-            Status::Reference => "referencia",
-            Status::Synced => "sincronizado",
-            Status::ByTime => "pelo horario",
-            Status::Unsynced => "nao sincronizado",
-            Status::Offline => "offline",
+            Status::Reference => tr!("referência", "reference"),
+            Status::Synced => tr!("sincronizado", "synced"),
+            Status::ByTime => tr!("pelo horário", "by time"),
+            Status::Unsynced => tr!("não sincronizado", "not synced"),
+            Status::Offline => tr!("arquivo não encontrado", "file not found"),
         }
     }
     pub fn placed(self) -> bool {
@@ -112,6 +114,14 @@ pub struct Clip {
     pub status: Status,
     pub score: f64,
     pub matched_to: String,
+    /// Audio envelope for display: max |sample| per 1/PEAKS_PER_SEC s (filled when the audio is read).
+    pub peaks: Option<Arc<Vec<f32>>>,
+}
+
+pub const PEAKS_PER_SEC: usize = 20;
+
+pub fn peaks_of(a: &[f32]) -> Vec<f32> {
+    a.chunks(AUDIO_SR / PEAKS_PER_SEC).map(|c| c.iter().fold(0f32, |m, v| m.max(v.abs()))).collect()
 }
 
 impl Clip {
@@ -147,7 +157,7 @@ pub struct Cancelled;
 
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Sincronizacao interrompida pelo usuario")
+        write!(f, "{}", tr!("Sincronização interrompida pelo usuário", "Synchronisation stopped by the user"))
     }
 }
 impl std::error::Error for Cancelled {}
@@ -383,7 +393,7 @@ impl<'a> SyncEngine<'a> {
         // 1. read audio (in parallel: every file is an ffmpeg process)
         if self.mode.audio {
             self.check()?;
-            (self.progress)("Lendo arquivos", 0.0);
+            (self.progress)(tr!("Lendo arquivos", "Reading files"), 0.0);
             let done = AtomicUsize::new(0);
             let n = all.len().max(1);
             let jobs: Vec<(usize, String, String, bool)> = all.iter()
@@ -401,12 +411,12 @@ impl<'a> SyncEngine<'a> {
                     let r = match loader(path) {
                         Ok(a) => Some(a),
                         Err(e) => {
-                            log(&format!("[erro] nao foi possivel ler {name}: {e}"));
+                            log(&tr!("[erro] não foi possível ler {}: {}", "[error] could not read {}: {}", name, e));
                             None
                         }
                     };
                     let k = done.fetch_add(1, Ordering::Relaxed) + 1;
-                    progress("Lendo arquivos", k as f64 / n as f64);
+                    progress(tr!("Lendo arquivos", "Reading files"), k as f64 / n as f64);
                     (*c, r)
                 }).collect()
             });
@@ -418,10 +428,11 @@ impl<'a> SyncEngine<'a> {
                 }
                 if let Some(a) = a {
                     self.clips[c].duration = a.len() as f64 / AUDIO_SR as f64;
+                    self.clips[c].peaks = Some(Arc::new(peaks_of(&a)));
                     self.audio.insert(c, a);
                 }
             }
-            (self.progress)("Lendo arquivos", 1.0);
+            (self.progress)(tr!("Lendo arquivos", "Reading files"), 1.0);
         }
         for &c in &all {
             if self.clips[c].duration == 0.0 {
@@ -438,7 +449,7 @@ impl<'a> SyncEngine<'a> {
         // 3. reference
         let r = self.pick_reference();
         let total_min = self.total_of(r) / 60.0;
-        self.log(&format!("Referencia: {} ({} clipes, {:.1} min)", self.devices[r].name, self.devices[r].clips.len(), total_min));
+        self.log(&tr!("Referência: {} ({} clipes, {:.1} min)", "Reference: {} ({} clips, {:.1} min)", self.devices[r].name, self.devices[r].clips.len(), total_min));
         let rclips = self.devices[r].clips.clone();
         let have_ct = rclips.iter().all(|&c| self.clips[c].ctime().is_some());
         let base = if have_ct { rclips.iter().filter_map(|&c| self.clips[c].ctime()).fold(f64::INFINITY, f64::min) } else { 0.0 };
@@ -452,7 +463,7 @@ impl<'a> SyncEngine<'a> {
             cl.status = Status::Reference;
         }
         if !have_ct && self.order != "xml" {
-            self.log("Referencia sem horario de criacao: mantendo posicoes do XML");
+            self.log(tr!("Referência sem horário de criação: mantendo as posições do XML", "Reference has no creation time: keeping the XML positions"));
         }
 
         let mut others: Vec<usize> = (0..self.devices.len()).filter(|&d| d != r).collect();
@@ -477,11 +488,11 @@ impl<'a> SyncEngine<'a> {
                 }
             }
         }
-        (self.progress)("Sincronizando", 1.0);
+        (self.progress)(tr!("Sincronizando", "Synchronising"), 1.0);
 
         let n_sync = all.iter().filter(|&&c| self.clips[c].status.placed()).count();
-        self.log(&format!("Concluido em {:.1}s: {}/{} clipes sincronizados pelo audio",
-                          t_start.elapsed().as_secs_f64(), n_sync, all.len()));
+        self.log(&tr!("Concluído em {:.1} s: {}/{} clipes sincronizados pelo áudio", "Done in {:.1} s: {}/{} clips synced by audio",
+                      t_start.elapsed().as_secs_f64(), n_sync, all.len()));
         Ok(())
     }
 
@@ -577,8 +588,8 @@ impl<'a> SyncEngine<'a> {
         cl.matched_to = dname.clone();
         let name = cl.name.clone();
         self.done += 1;
-        (self.progress)("Sincronizando", self.done as f64 / self.total as f64);
-        self.log(&format!("  {name}: sincronizado com {dname} em {t:.3}s (z={:.1})", cand.z));
+        (self.progress)(tr!("Sincronizando", "Synchronising"), self.done as f64 / self.total as f64);
+        self.log(&tr!("  {}: sincronizado com {} em {:.3} s (z={:.1})", "  {}: synced to {} at {:.3} s (z={:.1})", name, dname, t, cand.z));
     }
 
     fn unsync(&mut self, c: usize) {
@@ -596,7 +607,7 @@ impl<'a> SyncEngine<'a> {
             .filter(|&c| !matches!(self.clips[c].status, Status::Offline | Status::Synced) && self.audio.contains_key(&c)).collect();
         if !second {
             let names: Vec<&str> = targets.iter().map(|&t| self.devices[t].name.as_str()).collect();
-            self.log(&format!("Sincronizando {} ({} clipes) contra {}", self.devices[d].name, self.devices[d].clips.len(), names.join(", ")));
+            self.log(&tr!("Sincronizando {} ({} clipes) contra {}", "Synchronising {} ({} clips) against {}", self.devices[d].name, self.devices[d].clips.len(), names.join(", ")));
         }
         if targets.is_empty() {
             live.clear();
@@ -726,7 +737,8 @@ impl<'a> SyncEngine<'a> {
                     let gap = (cct - rct).abs();
                     if gap > 86400.0 && Some(c) == first {
                         let rdev = self.clips[rc].device.map(|i| self.devices[i].name.clone()).unwrap_or_default();
-                        self.log(&format!("[aviso] o relogio de {} difere {:.1} dias do de {}: posicionamento so por horario provavelmente errado",
+                        self.log(&tr!("[aviso] o relógio de {} difere {:.1} dias do de {}: o posicionamento só pelo horário deve estar errado",
+                                      "[warning] the clock of {} is {:.1} days off from {}: placement by time alone is probably wrong",
                                           self.devices[d].name, gap / 86400.0, rdev));
                     }
                 }
@@ -737,8 +749,8 @@ impl<'a> SyncEngine<'a> {
             }
             if !second {
                 self.done += 1;
-                (self.progress)("Sincronizando", self.done as f64 / self.total as f64);
-                self.log(&format!("  {}: SEM correspondencia de audio -> {}", self.clips[c].name, self.clips[c].status.code()));
+                (self.progress)(tr!("Sincronizando", "Synchronising"), self.done as f64 / self.total as f64);
+                self.log(&tr!("  {}: SEM correspondência de áudio -> {}", "  {}: NO audio match -> {}", self.clips[c].name, self.clips[c].status.label()));
             }
         }
         Ok(())
@@ -779,7 +791,7 @@ impl<'a> SyncEngine<'a> {
             }
             let (_, k) = best.unwrap();
             if k != "ctime" {
-                self.log(&format!("  {}: ordem cronologica por '{}' (horario de criacao nao bate com o audio)", self.devices[d].name, k));
+                self.log(&tr!("  {}: ordem cronológica por '{}' (o horário de criação não bate com o áudio)", "  {}: chronological order by '{}' (creation times disagree with the audio)", self.devices[d].name, k));
             }
             self.sort_device(d, k);
         }
@@ -820,7 +832,7 @@ impl<'a> SyncEngine<'a> {
         }
         for (k, &c) in seq.iter().enumerate() {
             if !keep[k] {
-                self.log(&format!("  {}: descartado (quebra a ordem cronologica)", self.clips[c].name));
+                self.log(&tr!("  {}: descartado (quebra a ordem cronológica)", "  {}: discarded (breaks the chronological order)", self.clips[c].name));
                 self.unsync(c);
             }
         }
@@ -849,12 +861,12 @@ impl<'a> SyncEngine<'a> {
         if ok {
             for (k, &c) in anchors.iter().enumerate() {
                 if !good[k] {
-                    self.log(&format!("  {}: descartado (contradiz o relogio do dispositivo)", self.clips[c].name));
+                    self.log(&tr!("  {}: descartado (contradiz o relógio do dispositivo)", "  {}: discarded (contradicts the device clock)", self.clips[c].name));
                     self.unsync(c);
                 }
             }
         } else {
-            self.log(&format!("  {}: horario de criacao inconsistente com o audio - usando so a cronologia", self.devices[d].name));
+            self.log(&tr!("  {}: horário de criação inconsistente com o áudio - usando só a cronologia", "  {}: creation times inconsistent with the audio - using chronology only", self.devices[d].name));
         }
     }
 

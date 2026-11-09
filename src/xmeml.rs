@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 
 use crate::dom::{self, Element, Node};
+use crate::tr;
 
 pub fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
@@ -236,14 +237,14 @@ pub struct XmemlDocument {
 
 impl XmemlDocument {
     pub fn open(path: &str) -> Result<Self> {
-        let bytes = std::fs::read(path).with_context(|| format!("Nao foi possivel ler {path}"))?;
+        let bytes = std::fs::read(path).with_context(|| tr!("Não foi possível ler {}", "Could not read {}", path))?;
         let root = dom::parse(&bytes)?;
         if root.name != "xmeml" {
-            bail!("Isto nao e um XML Final Cut Pro 7 (xmeml)");
+            bail!(tr!("Isto não é um XML Final Cut Pro 7 (xmeml)", "This is not a Final Cut Pro 7 XML (xmeml)"));
         }
         let sequence_paths = root.iter_paths("sequence");
         if sequence_paths.is_empty() {
-            bail!("Nao ha sequencias no arquivo XML");
+            bail!(tr!("Não há sequências no arquivo XML", "The XML file has no sequences"));
         }
         Ok(XmemlDocument { path: path.to_string(), root, sequence_paths })
     }
@@ -259,7 +260,7 @@ impl XmemlDocument {
     }
 
     pub fn sequence(&self, index: usize) -> Result<Sequence> {
-        let p = self.sequence_paths.get(index).with_context(|| format!("Sequencia {index} nao existe"))?;
+        let p = self.sequence_paths.get(index).with_context(|| tr!("A sequência {} não existe", "Sequence {} does not exist", index))?;
         Ok(Sequence::parse(&self.root, p.clone()))
     }
 }
@@ -431,6 +432,6 @@ pub fn write_synced(doc: &mut XmemlDocument, seq: &Sequence, placements: &HashMa
 
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE xmeml>\n");
     out.push_str(&dom::write(&doc.root));
-    std::fs::write(out_path, out).with_context(|| format!("Nao foi possivel gravar {}", out_path.display()))?;
+    std::fs::write(out_path, out).with_context(|| tr!("Não foi possível gravar {}", "Could not write {}", out_path.display()))?;
     Ok(())
 }

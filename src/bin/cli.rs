@@ -5,8 +5,9 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
 use clap::Parser;
-use sincra::engine::{MODES, DEFAULT_MODE};
+use sincra::engine::{DEFAULT_MODE, MODES};
 use sincra::project::{Options, Project};
+use sincra::tr;
 
 fn mode_names() -> Vec<&'static str> {
     MODES.iter().map(|m| m.name).collect()
@@ -14,52 +15,52 @@ fn mode_names() -> Vec<&'static str> {
 
 #[derive(Parser, Debug)]
 #[command(name = "sincra", version,
-          about = "Sincroniza automaticamente cameras e gravadores de uma timeline Final Cut Pro 7 XML (Premiere / DaVinci Resolve) pelo audio.")]
+          about = tr!("Sincroniza automaticamente pelo áudio as câmeras e gravadores de uma timeline Final Cut Pro 7 XML (DaVinci Resolve / Premiere).",
+                      "Automatically syncs the cameras and recorders of a Final Cut Pro 7 XML timeline (DaVinci Resolve / Premiere) by audio."))]
 struct Args {
-    /// XML de entrada (FCP7 xmeml). Sem argumentos abre a interface grafica.
+    #[arg(help = tr!("XML de entrada (FCP7 xmeml). Sem argumentos abre a interface gráfica.",
+                     "Input XML (FCP7 xmeml). Without arguments the graphical interface opens."))]
     xml: Option<String>,
-    /// XML de saida (padrao: '<entrada> - synced.xml')
-    #[arg(short, long)]
+    #[arg(short, long, help = tr!("XML de saída (padrão: '<entrada> - synced.xml')", "Output XML (default: '<input> - synced.xml')"))]
     output: Option<PathBuf>,
-    /// indice da sequencia no XML
-    #[arg(short, long, default_value_t = 0)]
+    #[arg(short, long, default_value_t = 0, help = tr!("índice da sequência no XML", "sequence index in the XML"))]
     sequence: usize,
-    /// velocidade/qualidade
-    #[arg(short, long, default_value = DEFAULT_MODE, value_parser = clap::builder::PossibleValuesParser::new(mode_names()))]
+    #[arg(short, long, default_value = DEFAULT_MODE, value_parser = clap::builder::PossibleValuesParser::new(mode_names()),
+          help = tr!("velocidade/precisão", "speed/precision"))]
     mode: String,
-    /// ordem cronologica dos clipes de cada dispositivo (auto = decide pelo audio)
-    #[arg(long, default_value = "auto", value_parser = ["auto", "ctime", "xml", "name"])]
+    #[arg(long, default_value = "auto", value_parser = ["auto", "ctime", "xml", "name"],
+          help = tr!("ordem cronológica dos clipes de cada dispositivo (auto = decide pelo áudio)",
+                     "chronological order of each device's clips (auto = decided from the audio)"))]
     order: String,
-    /// nao forcar a ordem cronologica dos clipes
-    #[arg(long)]
+    #[arg(long, help = tr!("não forçar a ordem cronológica dos clipes", "do not enforce the chronological order of clips"))]
     no_chronology: bool,
-    /// indice do dispositivo de referencia (ver --list)
-    #[arg(long)]
+    #[arg(long, help = tr!("índice do dispositivo de referência (veja --list)", "index of the reference device (see --list)"))]
     reference: Option<usize>,
-    /// cor de label para clipes sincronizados (Premiere)
-    #[arg(long)]
+    #[arg(long, help = tr!("cor de label dos clipes sincronizados", "label color for synced clips"))]
     label_synced: Option<String>,
-    /// cor de label para nao sincronizados ('' desativa)
-    #[arg(long, default_value = "Rose")]
+    #[arg(long, default_value = "Rose", help = tr!("cor de label dos não sincronizados ('' desativa)", "label color for unsynced clips ('' disables)"))]
     label_unsynced: String,
-    #[arg(long, default_value = " - synced", allow_hyphen_values = true)]
+    #[arg(long, default_value = " - synced", allow_hyphen_values = true,
+          help = tr!("sufixo do arquivo e da sequência exportados", "suffix of the exported file and sequence"))]
     suffix: String,
-    /// nao gravar cache de audio
-    #[arg(long)]
+    #[arg(long, help = tr!("não gravar cache de áudio", "do not write the audio cache"))]
     no_cache: bool,
-    #[arg(long)]
+    #[arg(long, help = tr!("pasta do cache de áudio", "audio cache folder"))]
     cache_dir: Option<String>,
-    /// redireciona prefixo de caminho (ex.: E:/Trabalhos=/Volumes/HD/Trabalhos)
-    #[arg(long, value_name = "ANTIGO=NOVO")]
+    #[arg(long, value_name = tr!("ANTIGO=NOVO", "OLD=NEW"),
+          help = tr!("redireciona um prefixo de caminho (ex.: E:/Trabalhos=/Volumes/HD/Trabalhos)",
+                     "redirect a path prefix (e.g. E:/Projects=/Volumes/HD/Projects)"))]
     remap: Vec<String>,
-    /// procura arquivos ausentes por nome nesta pasta (recursivo)
-    #[arg(long, value_name = "PASTA")]
+    #[arg(long, value_name = tr!("PASTA", "FOLDER"),
+          help = tr!("procura arquivos ausentes por nome nesta pasta (recursivo)", "look for missing files by name in this folder (recursive)"))]
     search: Vec<String>,
-    /// so lista sequencias/dispositivos, sem sincronizar
-    #[arg(long)]
+    #[arg(long, help = tr!("só lista sequências/dispositivos, sem sincronizar", "only list sequences/devices, do not sync"))]
     list: bool,
-    #[arg(short, long)]
+    #[arg(short, long, help = tr!("sem mensagens", "no messages"))]
     quiet: bool,
+    #[arg(long, default_value = "auto", value_parser = ["auto", "pt", "en"],
+          help = tr!("idioma das mensagens (auto = do sistema)", "message language (auto = system)"))]
+    lang: String,
 }
 
 fn launch_gui() -> ExitCode {
@@ -68,15 +69,23 @@ fn launch_gui() -> ExitCode {
     if let Some(gui) = exe.as_ref().and_then(|e| e.parent()).map(|d| d.join(name)).filter(|p| p.is_file()) {
         match std::process::Command::new(gui).spawn() {
             Ok(_) => return ExitCode::SUCCESS,
-            Err(e) => eprintln!("Erro ao abrir a interface: {e}"),
+            Err(e) => eprintln!("{}", tr!("Erro ao abrir a interface: {}", "Could not open the interface: {}", e)),
         }
     } else {
-        eprintln!("Interface grafica ({name}) nao encontrada ao lado deste executavel. Use --help para a linha de comando.");
+        eprintln!("{}", tr!("Interface gráfica ({}) não encontrada ao lado deste executável. Use --help para a linha de comando.",
+                            "Graphical interface ({}) not found next to this executable. See --help for the command line.", name));
     }
     ExitCode::FAILURE
 }
 
 fn main() -> ExitCode {
+    // the language must be known before clap builds the help text
+    let argv: Vec<String> = std::env::args().collect();
+    let lang = argv.iter().position(|a| a == "--lang").and_then(|i| argv.get(i + 1).cloned())
+        .or_else(|| argv.iter().find_map(|a| a.strip_prefix("--lang=").map(str::to_string)))
+        .unwrap_or_else(|| "auto".into());
+    sincra::i18n::set_lang(&lang);
+
     let args = Args::parse();
     let Some(xml) = args.xml.clone() else { return launch_gui() };
     let opts = Options {
@@ -101,7 +110,7 @@ fn main() -> ExitCode {
     match run(&args, &xml, opts, log) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("Erro: {e:#}");
+            eprintln!("{} {e:#}", tr!("Erro:", "Error:"));
             ExitCode::FAILURE
         }
     }
@@ -111,13 +120,13 @@ fn run(args: &Args, xml: &str, opts: Options, log: sincra::engine::LogFn) -> any
     let mut proj = Project::new(xml, args.sequence, opts, log)?;
     if args.list {
         for (i, n) in proj.doc.sequence_names().iter().enumerate() {
-            println!("sequencia {i}: {n}");
+            println!("{}", tr!("sequência {}: {}", "sequence {}: {}", i, n));
         }
     }
     proj.load(None)?;
     if args.list {
         for d in &proj.devices {
-            println!("dispositivo {}: {} [{}] {} clipes", d.idx, d.name, d.kind, d.clips.len());
+            println!("{}", tr!("dispositivo {}: {} [{}] {} clipes", "device {}: {} [{}] {} clips", d.idx, d.name, d.kind, d.clips.len()));
         }
         return Ok(());
     }
@@ -134,12 +143,12 @@ fn run(args: &Args, xml: &str, opts: Options, log: sincra::engine::LogFn) -> any
     proj.synchronize(Some(progress), None)?;
     let out = proj.export(args.output.as_deref())?;
     if !args.quiet {
-        println!("\nResultado:");
+        println!("\n{}", tr!("Resultado:", "Result:"));
         for r in proj.summary() {
             let t = r.t.map(|t| format!("{t:.3}s")).unwrap_or_else(|| "-".into());
-            println!("  {:<12} {:<32} {:<17} {:>12}  z={:.1}", r.device, r.clip, r.status.pt(), t, r.score);
+            println!("  {:<12} {:<32} {:<22} {:>12}  z={:.1}", r.device, r.clip, r.status.label(), t, r.score);
         }
-        println!("\nSalvo em: {}", out.display());
+        println!("\n{} {}", tr!("Salvo em:", "Saved to:"), out.display());
     }
     Ok(())
 }

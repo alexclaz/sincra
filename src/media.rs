@@ -12,6 +12,8 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use regex::Regex;
 use sha1::{Digest, Sha1};
 
+use crate::tr;
+
 /// Analysis sample rate of the cached audio.
 pub const AUDIO_SR: usize = 8000;
 
@@ -64,7 +66,7 @@ pub fn ffmpeg_exe() -> Result<PathBuf> {
         ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg"]
             .iter().map(PathBuf::from).find(|p| p.is_file())
     });
-    found.clone().context("ffmpeg nao encontrado. Reinstale o Sincra (o instalador baixa o ffmpeg) ou instale o ffmpeg no PATH")
+    found.clone().context(tr!("ffmpeg não encontrado. Reinstale o Sincra (o instalador inclui o ffmpeg) ou instale o ffmpeg no PATH", "ffmpeg not found. Reinstall Sincra (the installer includes ffmpeg) or put ffmpeg on the PATH"))
 }
 
 pub fn default_cache_dir() -> PathBuf {
@@ -336,16 +338,25 @@ impl AudioCache {
         Ok(a)
     }
 
+    /// Audio already in the disk cache (no decoding), for waveform previews.
+    pub fn load_cached(&self, path: &str) -> Option<Audio> {
+        if !self.enabled {
+            return None;
+        }
+        let cf = self.dir.join(Self::key(path).ok()?);
+        read_npy_f32(&cf).ok().map(Arc::new)
+    }
+
     fn decode(path: &str) -> Result<Vec<f32>> {
         let exe = ffmpeg_exe()?;
         let o = command(&exe)
             .args(["-v", "error", "-i"]).arg(path)
             .args(["-vn", "-ac", "1", "-ar", &AUDIO_SR.to_string(), "-f", "f32le", "-"])
-            .stdin(Stdio::null()).output().context("falha ao executar ffmpeg")?;
+            .stdin(Stdio::null()).output().context(tr!("falha ao executar o ffmpeg", "failed to run ffmpeg"))?;
         if !o.status.success() && o.stdout.is_empty() {
             let err = String::from_utf8_lossy(&o.stderr);
             let tail: String = err.chars().rev().take(300).collect::<Vec<_>>().into_iter().rev().collect();
-            bail!("Erro ao decodificar audio de {path}: {tail}");
+            bail!(tr!("Erro ao decodificar o áudio de {}: {}", "Could not decode the audio of {}: {}", path, tail));
         }
         Ok(o.stdout.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect())
     }

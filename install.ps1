@@ -1,6 +1,6 @@
 # Sincra installer for Windows (PowerShell).
 #
-#   irm https://raw.githubusercontent.com/__REPO__/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/alexclaz/sincra/main/install.ps1 | iex
 #
 # Installs to %LOCALAPPDATA%\Programs\Sincra (GUI, CLI and ffmpeg), adds it to the user PATH
 # and creates a Start Menu shortcut. No admin rights needed. Files downloaded this way carry no
@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is very slow with the progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repo = if ($env:SINCRA_REPO) { $env:SINCRA_REPO } else { "__REPO__" }
+$Repo = if ($env:SINCRA_REPO) { $env:SINCRA_REPO } else { "alexclaz/sincra" }
 $Dest = Join-Path $env:LOCALAPPDATA "Programs\Sincra"
 $Shortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "Sincra.lnk"
 

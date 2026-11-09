@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::{pyround, Cancelled, Clip, Device, LogFn, ProgressFn, Status, SyncEngine, DEFAULT_MODE};
 use crate::media::{probe, AudioCache, MediaInfo, Signature};
+use crate::tr;
 use crate::xmeml::{write_synced, Kind, Sequence, XmemlDocument};
 
 pub const LABEL_COLORS: &[&str] = &["Violet", "Iris", "Caribbean", "Lavender", "Cerulean", "Forest", "Rose", "Mango",
@@ -138,7 +139,7 @@ impl Project {
             uniq.par_iter().map(|p| {
                 let info = probe(p);
                 let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-                progress("Analisando midia", n as f64 / total as f64);
+                progress(tr!("Analisando mídia", "Probing media"), n as f64 / total as f64);
                 (p.clone(), info)
             }).collect()
         });
@@ -151,14 +152,14 @@ impl Project {
             let real = &paths[&inst.path];
             let info = infos[real].clone();
             if !info.exists {
-                (self.log)(&format!("[aviso] arquivo nao encontrado: {}", inst.path));
+                (self.log)(&tr!("[aviso] arquivo não encontrado: {}", "[warning] file not found: {}", inst.path));
             }
             let sig = if info.exists { info.signature() } else { Signature::Missing };
             let exists = info.exists;
             let clip = Clip {
                 key: inst.key.clone(), name: inst.name.clone(), path: real.clone(), info,
                 raw_zero: self.seq.zero_frame(inst) / fps, duration: 0.0, device: None, order: 0, t: None,
-                status: if exists { Status::Unsynced } else { Status::Offline }, score: 0.0, matched_to: String::new(),
+                status: if exists { Status::Unsynced } else { Status::Offline }, score: 0.0, matched_to: String::new(), peaks: None,
             };
             self.clips.push(clip);
             let key = (self.seq.primary_track(inst), sig);
@@ -175,17 +176,32 @@ impl Project {
             let is_cam = clips.iter().any(|&c| self.clips[c].info.has_video);
             let name = if is_cam {
                 cams += 1;
-                format!("Camera {cams}")
+                tr!("Câmera {}", "Camera {}", cams)
             } else {
                 recs += 1;
-                format!("Gravador {recs}")
+                tr!("Gravador {}", "Recorder {}", recs)
             };
             for &c in &clips {
                 self.clips[c].device = Some(n);
             }
             self.devices.push(Device { idx: n, name, kind: if is_cam { "camera".into() } else { "recorder".into() }, clips });
         }
-        (self.log)(&format!("Sequencia '{}': {} clipes, {} camera(s), {} gravador(es)", self.seq.name, self.clips.len(), cams, recs));
+        // waveform previews for files whose audio is already in the cache
+        if self.opts.use_cache {
+            let cache = AudioCache::new(self.opts.cache_dir.as_deref(), true);
+            let peaks: Vec<Option<Arc<Vec<f32>>>> = pool.install(|| {
+                self.clips.par_iter().map(|c| {
+                    if !c.info.exists {
+                        return None;
+                    }
+                    cache.load_cached(&c.path).map(|a| Arc::new(crate::engine::peaks_of(&a)))
+                }).collect()
+            });
+            for (c, p) in self.clips.iter_mut().zip(peaks) {
+                c.peaks = p;
+            }
+        }
+        (self.log)(&tr!("Sequência '{}': {} clipes, {} câmera(s), {} gravador(es)", "Sequence '{}': {} clips, {} camera(s), {} recorder(s)", self.seq.name, self.clips.len(), cams, recs));
         Ok(())
     }
 
@@ -299,7 +315,7 @@ impl Project {
         let mut fresh = XmemlDocument::open(&self.xml_path)?;
         let seq = fresh.sequence(self.seq_index)?;
         write_synced(&mut fresh, &seq, &placements, &track_of, &out_path, &self.opts.suffix)?;
-        (self.log)(&format!("XML exportado: {}", out_path.display()));
+        (self.log)(&tr!("XML exportado: {}", "XML exported: {}", out_path.display()));
         Ok(out_path)
     }
 

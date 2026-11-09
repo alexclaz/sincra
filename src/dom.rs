@@ -4,6 +4,8 @@ use anyhow::{bail, Context, Result};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+use crate::tr;
+
 #[derive(Clone, Debug)]
 pub enum Node {
     Element(Element),
@@ -183,7 +185,7 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
     }
 
     loop {
-        let ev = reader.read_event_into(&mut buf).context("XML mal formado")?;
+        let ev = reader.read_event_into(&mut buf).context(tr!("XML mal formado", "Malformed XML"))?;
         match ev {
             Event::Start(e) => stack.push(start(&e)?),
             Event::Empty(e) => {
@@ -194,7 +196,7 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
                 }
             }
             Event::End(_) => {
-                let el = stack.pop().context("XML mal formado: tag de fechamento sobrando")?;
+                let el = stack.pop().context(tr!("XML mal formado: tag de fechamento sobrando", "Malformed XML: unexpected closing tag"))?;
                 match stack.last_mut() {
                     Some(p) => p.children.push(Node::Element(el)),
                     None => root = Some(el),
@@ -218,9 +220,9 @@ pub fn parse(bytes: &[u8]) -> Result<Element> {
         buf.clear();
     }
     if !stack.is_empty() {
-        bail!("XML mal formado: tags sem fechamento");
+        bail!(tr!("XML mal formado: tags sem fechamento", "Malformed XML: unclosed tags"));
     }
-    root.context("XML vazio")
+    root.context(tr!("XML vazio", "Empty XML"))
 }
 
 fn push_text(p: &mut Element, s: String) {

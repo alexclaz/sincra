@@ -3,6 +3,7 @@
 pub mod dom;
 pub mod dsp;
 pub mod engine;
+pub mod i18n;
 pub mod media;
 pub mod project;
 pub mod settings;
