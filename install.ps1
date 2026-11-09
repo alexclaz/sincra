@@ -30,11 +30,11 @@ if ($env:SINCRA_UNINSTALL -eq "1") {
     if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
     if (Test-Path $Shortcut) { Remove-Item -Force $Shortcut }
     Set-UserPath $Dest $false
-    Write-Host "Sincra removido. (cache de audio: $env:LOCALAPPDATA\sincra)"
+    Write-Host "Sincra removed. (audio cache: $env:LOCALAPPDATA\sincra)"
     return
 }
 
-if (-not [Environment]::Is64BitOperatingSystem) { throw "Sincra requer Windows 64-bit." }
+if (-not [Environment]::Is64BitOperatingSystem) { throw "Sincra requires 64-bit Windows." }
 
 $Asset = "sincra-windows-x64.zip"
 $Url = if ($env:SINCRA_VERSION) { "https://github.com/$Repo/releases/download/$($env:SINCRA_VERSION)/$Asset" }
@@ -46,7 +46,7 @@ try {
     if ($env:SINCRA_PACKAGE) {   # local zip (testing)
         Copy-Item $env:SINCRA_PACKAGE (Join-Path $Tmp $Asset)
     } else {
-        Write-Host "Baixando $Asset..."
+        Write-Host "Downloading $Asset..."
         Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile (Join-Path $Tmp $Asset)
     }
     Get-Process sincra-gui -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -59,20 +59,20 @@ try {
 }
 
 $Gui = Join-Path $Dest "sincra-gui.exe"
-if (-not (Test-Path $Gui)) { throw "pacote invalido: $Gui nao encontrado" }
+if (-not (Test-Path $Gui)) { throw "invalid package: $Gui not found" }
 
 $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut($Shortcut)
 $lnk.TargetPath = $Gui
 $lnk.WorkingDirectory = $Dest
-$lnk.Description = "Sincronizacao multicam por audio"
+$lnk.Description = "Multicam sync by audio"
 $lnk.Save()
 
 Set-UserPath $Dest $true
 $env:Path = "$env:Path;$Dest"
 
 Write-Host ""
-Write-Host "Instalado em $Dest" -ForegroundColor Green
-Write-Host "  Interface:        menu Iniciar > Sincra"
-Write-Host "  Linha de comando: sincra `"Timeline 1.xml`"   (abra um terminal novo)"
-Write-Host "  Desinstalar:      `$env:SINCRA_UNINSTALL=1; irm https://raw.githubusercontent.com/$Repo/main/install.ps1 | iex"
+Write-Host "Installed in $Dest" -ForegroundColor Green
+Write-Host "  Interface:     Start menu > Sincra"
+Write-Host "  Command line:  sincra `"Timeline 1.xml`"   (open a new terminal)"
+Write-Host "  Uninstall:     `$env:SINCRA_UNINSTALL=1; irm https://raw.githubusercontent.com/$Repo/main/install.ps1 | iex"
