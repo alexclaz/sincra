@@ -1,28 +1,36 @@
 //! Signal helpers: FFTs (cached plans), scipy-compatible next_fast_len and resample_poly (decimation).
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use realfft::num_complex::Complex32;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
-fn planner() -> &'static Mutex<RealFftPlanner<f32>> {
-    static P: OnceLock<Mutex<RealFftPlanner<f32>>> = OnceLock::new();
-    P.get_or_init(|| Mutex::new(RealFftPlanner::new()))
+/// Plans kept per direction. Large plans hold ~n-sized twiddle tables and the windowed searches use a
+/// different n almost every call, so an unbounded cache grows by megabytes per call and is never freed.
+const PLAN_CACHE: usize = 4;
+
+/// Most-recently-used plan cache. Every plan comes from a fresh planner so nothing else keeps it
+/// (or its sub-FFTs) alive once it is evicted.
+fn cached_plan<P: ?Sized>(cache: &Mutex<Vec<(usize, Arc<P>)>>, n: usize, make: impl FnOnce() -> Arc<P>) -> Arc<P> {
+    let mut g = cache.lock().unwrap();
+    if let Some(i) = g.iter().position(|(k, _)| *k == n) {
+        let e = g.remove(i);
+        g.insert(0, e);
+    } else {
+        g.insert(0, (n, make()));
+        g.truncate(PLAN_CACHE);
+    }
+    g[0].1.clone()
 }
 
 fn fwd_plan(n: usize) -> Arc<dyn RealToComplex<f32>> {
-    static C: OnceLock<Mutex<HashMap<usize, Arc<dyn RealToComplex<f32>>>>> = OnceLock::new();
-    let c = C.get_or_init(Default::default);
-    let mut g = c.lock().unwrap();
-    g.entry(n).or_insert_with(|| planner().lock().unwrap().plan_fft_forward(n)).clone()
+    static C: Mutex<Vec<(usize, Arc<dyn RealToComplex<f32>>)>> = Mutex::new(Vec::new());
+    cached_plan(&C, n, || RealFftPlanner::new().plan_fft_forward(n))
 }
 
 fn inv_plan(n: usize) -> Arc<dyn ComplexToReal<f32>> {
-    static C: OnceLock<Mutex<HashMap<usize, Arc<dyn ComplexToReal<f32>>>>> = OnceLock::new();
-    let c = C.get_or_init(Default::default);
-    let mut g = c.lock().unwrap();
-    g.entry(n).or_insert_with(|| planner().lock().unwrap().plan_fft_inverse(n)).clone()
+    static C: Mutex<Vec<(usize, Arc<dyn ComplexToReal<f32>>)>> = Mutex::new(Vec::new());
+    cached_plan(&C, n, || RealFftPlanner::new().plan_fft_inverse(n))
 }
 
 /// Smallest 5-smooth number >= n (scipy.fft.next_fast_len(n, real=True)).
