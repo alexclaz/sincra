@@ -1,6 +1,6 @@
 [package]
 name = "sincra"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Sincronizacao automatica multicam (cameras + gravadores) por audio para timelines FCP7 XML"
 license = "MIT"
