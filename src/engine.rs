@@ -17,7 +17,7 @@ use anyhow::Result;
 use rayon::prelude::*;
 use realfft::num_complex::Complex32;
 
-use crate::dsp::{decimate, irfft, next_fast_len, rfft};
+use crate::dsp::{clear_plan_cache, coarse_fast_len, decimate, irfft, next_fast_len, rfft};
 use crate::media::{Audio, MediaInfo, AUDIO_SR};
 use crate::tr;
 
@@ -97,6 +97,9 @@ const R_LOCAL: f64 = 1.15;
 const CLOCK_WINDOW: f64 = 4.0; // +/- seconds around the clock prediction in windowed search
 const CHRONO_TOL: f64 = 1.0; // allowed overlap between consecutive clips of one device (s)
 const LOW_CUT: f64 = 80.0; // Hz, ignore rumble / hum
+/// Placed clips further apart than this are searched as separate islands: a device that holds several
+/// shoots (days apart) would otherwise need one FFT spanning all the silence between them.
+const ISLAND_GAP: f64 = 1800.0;
 
 #[derive(Clone, Debug)]
 pub struct Clip {
@@ -201,7 +204,8 @@ pub struct SyncEngine<'a> {
     cancelled: Arc<AtomicBool>,
     audio: HashMap<usize, Audio>,
     rs: HashMap<(usize, usize), Audio>,
-    spec: HashMap<(usize, usize), (Arc<Vec<Complex32>>, usize, usize, f64)>,
+    /// per (device, rate): spectrum of each island of continuous audio (spec, fft size, length, start)
+    spec: HashMap<(usize, usize), Vec<(Arc<Vec<Complex32>>, usize, usize, f64)>>,
     clock_ok: HashMap<usize, bool>,
     done: i64,
     total: i64,
@@ -323,30 +327,54 @@ impl<'a> SyncEngine<'a> {
         if x.len() < sr / 2 || !x.iter().any(|&v| v != 0.0) {
             return vec![];
         }
-        let (t0, t1) = self.device_span(d);
         let key = (d, sr);
         if !self.spec.contains_key(&key) {
             let loaded: Vec<usize> = self.audio.keys().copied().collect();
             let maxlen = loaded.into_iter().map(|k| self.get_audio(k, sr).len()).max().unwrap_or(0);
-            let buf = self.segment(d, t0, t1, sr);
-            let n = next_fast_len(buf.len() + maxlen);
-            let spec = rfft(&buf, n);
-            self.spec.insert(key, (Arc::new(spec), n, buf.len(), t0));
+            let mut islands = Vec::new();
+            for (t0, t1) in self.islands(d) {
+                let buf = self.segment(d, t0, t1, sr);
+                let n = coarse_fast_len(buf.len() + maxlen);
+                let spec = rfft(&buf, n);
+                islands.push((Arc::new(spec), n, buf.len(), t0));
+            }
+            self.spec.insert(key, islands);
         }
-        let (a, n, blen, t0) = self.spec[&key].clone();
-        let r = Self::phat(&a, &rfft(&x, n), n, sr);
-        // keep lags from -(len(x)-min_overlap) to blen-min_overlap
-        let ov = x.len().min(sr) / 2;
-        let neg_start = n - (x.len() - ov);
-        let mut lags: Vec<usize> = (neg_start..n).collect();
-        lags.extend(0..(blen as i64 - ov as i64).max(1) as usize);
-        let rr: Vec<f32> = lags.iter().map(|&l| r[l]).collect();
-        let pk = Self::peaks(&rr, sr, 5);
+        // (t, z) of the best peaks over all islands
+        let mut pk: Vec<(f64, f64)> = Vec::new();
+        for (a, n, blen, t0) in self.spec[&key].clone() {
+            let r = Self::phat(&a, &rfft(&x, n), n, sr);
+            // keep lags from -(len(x)-min_overlap) to blen-min_overlap
+            let ov = x.len().min(sr) / 2;
+            let neg = x.len() - ov; // lags -neg..0 sit at the end of r
+            let pos = (blen as i64 - ov as i64).max(1) as usize;
+            let mut rr = Vec::with_capacity(neg + pos);
+            rr.extend_from_slice(&r[n - neg..]);
+            rr.extend_from_slice(&r[..pos]);
+            drop(r);
+            for (i, z) in Self::peaks(&rr, sr, 5) {
+                pk.push((t0 + (i as i64 - neg as i64) as f64 / sr as f64, z));
+            }
+        }
+        pk.sort_by(|a, b| b.1.total_cmp(&a.1));
         let mut out = Vec::new();
-        for (j, &(i, z)) in pk.iter().take(5).enumerate() {
-            let lag = if lags[i] >= n - x.len() { lags[i] as i64 - n as i64 } else { lags[i] as i64 };
+        for (j, &(t, z)) in pk.iter().take(5).enumerate() {
             let ratio = if j == 0 { if pk.len() > 1 { z / pk[1].1 } else { 99.0 } } else { z / pk[0].1 };
-            out.push(Candidate { t: t0 + lag as f64 / sr as f64, z, ratio, target: d });
+            out.push(Candidate { t, z, ratio, target: d });
+        }
+        out
+    }
+
+    /// Spans of the placed clips of `d`, split wherever the gap between them exceeds ISLAND_GAP.
+    fn islands(&self, d: usize) -> Vec<(f64, f64)> {
+        let mut iv: Vec<(f64, f64)> = self.placed(d).iter().map(|&c| (self.clips[c].tt(), self.clips[c].end())).collect();
+        iv.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut out: Vec<(f64, f64)> = Vec::new();
+        for (a, b) in iv {
+            match out.last_mut() {
+                Some(last) if a <= last.1 + ISLAND_GAP => last.1 = last.1.max(b),
+                _ => out.push((a, b)),
+            }
         }
         out
     }
@@ -380,14 +408,62 @@ impl<'a> SyncEngine<'a> {
         // reverberant rooms give several close PHAT peaks; at a low rate the coarse pass may pick a
         // neighbour, so the fine pass re-decides within +-60 ms at full rate
         let w = (4.0 / coarse_sr as f64).max(0.06);
-        match self.local_search(c, d, t - w, t + w, AUDIO_SR) {
-            Some(cand) if (cand.t - t).abs() <= w => cand.t, // z inside a tiny window is meaningless
+        match self.fine_search(c, d, t - w, t + w) {
+            Some(ft) if (ft - t).abs() <= w => ft, // z inside a tiny window is meaningless
             _ => t,
         }
     }
 
+    /// Best t in [lo, hi] (a narrow window) at the full analysis rate. The clip is correlated in
+    /// chunks whose PHAT correlations are summed, so memory stays bounded by the chunk length instead
+    /// of the clip length (a whole long clip at 8 kHz meant FFTs of ~100M points, several GB).
+    fn fine_search(&mut self, c: usize, d: usize, lo: f64, hi: f64) -> Option<f64> {
+        const CHUNK_S: f64 = 60.0;
+        let sr = AUDIO_SR;
+        let x = self.get_audio(c, sr);
+        if x.len() < sr / 4 || hi < lo {
+            return None;
+        }
+        let nl = (pyround((hi - lo) * sr as f64) as i64 + 1).max(1) as usize;
+        let chunk = (CHUNK_S * sr as f64) as usize;
+        let mut acc = vec![0f32; nl];
+        let mut any = false;
+        for start in (0..x.len()).step_by(chunk) {
+            let xc = &x[start..(start + chunk).min(x.len())];
+            if xc.len() < sr / 4 || !xc.iter().any(|&v| v != 0.0) {
+                continue;
+            }
+            let off = start as f64 / sr as f64;
+            let seg = self.segment(d, lo + off, hi + off + xc.len() as f64 / sr as f64, sr);
+            if !seg.iter().any(|&v| v != 0.0) {
+                continue;
+            }
+            let n = next_fast_len(seg.len() + xc.len());
+            let r = Self::phat(&rfft(&seg, n), &rfft(xc, n), n, sr);
+            for (a, v) in acc.iter_mut().zip(&r[..nl.min(r.len())]) {
+                *a += v;
+            }
+            any = true;
+        }
+        if !any {
+            return None;
+        }
+        let i = argmax(&acc);
+        Some(lo + Self::parabolic(&acc, i) / sr as f64)
+    }
+
     // ------------------------------------------------------------------ main flow
     pub fn run(&mut self) -> Result<(), Cancelled> {
+        let r = self.run_inner();
+        // free the audio and spectra now, not when the engine is dropped, then the FFT plans
+        self.audio.clear();
+        self.rs.clear();
+        self.spec.clear();
+        clear_plan_cache();
+        r
+    }
+
+    fn run_inner(&mut self) -> Result<(), Cancelled> {
         let t_start = Instant::now();
         let all: Vec<usize> = self.devices.iter().flat_map(|d| d.clips.iter().copied()).collect();
         // 1. read audio (in parallel: every file is an ffmpeg process)
@@ -906,7 +982,7 @@ impl<'a> SyncEngine<'a> {
                 let pred = nbc.tt() + (cct - nbc.ctime().unwrap());
                 let w = CLOCK_WINDOW + 0.002 * (cct - nbc.ctime().unwrap()).abs();
                 let (cl_, ch) = (lo.max(pred - w), hi.min(pred + w));
-                if ch > cl_ {
+                if ch > cl_ && ch - cl_ <= 3600.0 {
                     out.push((cl_, ch));
                 }
                 if self.mode.clock_window && self.clock_ok.get(&d).copied().unwrap_or(false) {

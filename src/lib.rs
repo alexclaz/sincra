@@ -1,5 +1,11 @@
 //! Sincra: automatic multicam audio synchronisation for FCP7 XML timelines.
 
+#[cfg(target_os = "macos")]
+mod alloc;
+#[cfg(target_os = "macos")]
+#[global_allocator]
+static ALLOC: alloc::Alloc = alloc::Alloc;
+
 pub mod dom;
 pub mod dsp;
 pub mod engine;

@@ -11,7 +11,7 @@ const PLAN_CACHE: usize = 4;
 
 /// Most-recently-used plan cache. Every plan comes from a fresh planner so nothing else keeps it
 /// (or its sub-FFTs) alive once it is evicted.
-fn cached_plan<P: ?Sized>(cache: &Mutex<Vec<(usize, Arc<P>)>>, n: usize, make: impl FnOnce() -> Arc<P>) -> Arc<P> {
+fn cached_plan<P: ?Sized>(cache: &PlanCache<P>, n: usize, make: impl FnOnce() -> Arc<P>) -> Arc<P> {
     let mut g = cache.lock().unwrap();
     if let Some(i) = g.iter().position(|(k, _)| *k == n) {
         let e = g.remove(i);
@@ -23,14 +23,22 @@ fn cached_plan<P: ?Sized>(cache: &Mutex<Vec<(usize, Arc<P>)>>, n: usize, make: i
     g[0].1.clone()
 }
 
+type PlanCache<P> = Mutex<Vec<(usize, Arc<P>)>>;
+static FWD: PlanCache<dyn RealToComplex<f32>> = Mutex::new(Vec::new());
+static INV: PlanCache<dyn ComplexToReal<f32>> = Mutex::new(Vec::new());
+
 fn fwd_plan(n: usize) -> Arc<dyn RealToComplex<f32>> {
-    static C: Mutex<Vec<(usize, Arc<dyn RealToComplex<f32>>)>> = Mutex::new(Vec::new());
-    cached_plan(&C, n, || RealFftPlanner::new().plan_fft_forward(n))
+    cached_plan(&FWD, n, || RealFftPlanner::new().plan_fft_forward(n))
 }
 
 fn inv_plan(n: usize) -> Arc<dyn ComplexToReal<f32>> {
-    static C: Mutex<Vec<(usize, Arc<dyn ComplexToReal<f32>>)>> = Mutex::new(Vec::new());
-    cached_plan(&C, n, || RealFftPlanner::new().plan_fft_inverse(n))
+    cached_plan(&INV, n, || RealFftPlanner::new().plan_fft_inverse(n))
+}
+
+/// Drop every cached plan (hundreds of MB after a sync with long recordings).
+pub fn clear_plan_cache() {
+    FWD.lock().unwrap().clear();
+    INV.lock().unwrap().clear();
 }
 
 /// Smallest 5-smooth number >= n (scipy.fft.next_fast_len(n, real=True)).
@@ -59,6 +67,24 @@ pub fn next_fast_len(n: usize) -> usize {
             break;
         }
         p5 *= 5;
+    }
+    best
+}
+
+/// Smallest m * 2^k >= n with m in a short list of 5-smooth mantissas (at most 25% above `n`).
+/// Searches whose lengths differ a little then share one FFT size, and so one cached plan: large plans
+/// hold hundreds of MB of twiddles, and next_fast_len gives a different size for almost every n.
+pub fn coarse_fast_len(n: usize) -> usize {
+    if n <= 32 {
+        return next_fast_len(n);
+    }
+    let mut best = usize::MAX;
+    for m in [16usize, 18, 20, 24, 25, 27, 30, 32] {
+        let mut v = m;
+        while v < n {
+            v *= 2;
+        }
+        best = best.min(v);
     }
     best
 }
@@ -176,6 +202,9 @@ mod tests {
         assert_eq!(next_fast_len(11), 12);
         assert_eq!(next_fast_len(1001), 1024);
         assert_eq!(next_fast_len(1025), 1080);
+        assert_eq!(coarse_fast_len(22_500_000), 24 << 20);
+        assert_eq!(coarse_fast_len(24_300_000), 24 << 20);
+        assert_eq!(coarse_fast_len(1000), 1024);
         assert_eq!(next_fast_len(18_000_001), 18_000_000usize.max(next_fast_len(18_000_001)));
     }
 
